@@ -1,0 +1,46 @@
+name: 🤖 Rios News Bot - Automação 24h na Nuvem
+
+on:
+  # 1. Agendamento automático a cada 6 horas todos os dias (00:00, 06:00, 12:00, 18:00 UTC)
+  schedule:
+    - cron: '0 */6 * * *'
+    
+  # 2. Botão manual para você disparar o robô na nuvem a qualquer hora com 1 clique no celular ou PC!
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'Modo de execução'
+        required: false
+        default: 'todos'
+        type: choice
+        options:
+          - todos
+          - youtube
+          - tendencias
+
+jobs:
+  executar_robo_rios:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: 🐍 Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Instalar dependências e bibliotecas
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🚀 Executar Rios News Bot no Servidor da Nuvem
+        run: |
+          if [ "${{ github.event.inputs.modo }}" != "" ]; then
+            python robo_rios.py --modo "${{ github.event.inputs.modo }}"
+          else
+            python robo_rios.py --modo todos
+          fi

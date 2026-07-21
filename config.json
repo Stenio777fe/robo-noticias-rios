@@ -1,0 +1,97 @@
+{
+  "_instrucoes": "Configure os dados do seu site, chave da Inteligência Artificial e canais do YouTube abaixo.",
+  "wordpress": {
+    "url_api": "https://noticias.riosministerio.com/wp-json/wp/v2",
+    "usuario": "steniopalavraquetransforma@gmail.com",
+    "senha_aplicativo": "Riosnoticia@777",
+    "status_padrao": "draft",
+    "autor_id": 1
+  },
+  "inteligencia_artificial": {
+    "provedor": "gemini",
+    "api_key_gemini": "AQ.Ab8RN6K_Ize_0SHJJburM-cH3t4TvCl7Qvkvq3kF_L_772xkNw",
+    "api_key_openai": "COLE_SUA_CHAVE_OPENAI_AQUI",
+    "modelo_gemini": "gemini-2.5-flash",
+    "modelo_openai": "gpt-4o-mini"
+  },
+  "canais_youtube": [
+    {
+      "nome": "Canal 1 para Mensagens (Seu Canal Principal)",
+      "channel_id_ou_url": "https://www.youtube.com/@StenioRiosMinisterio",
+      "categoria_padrao_id": 8
+    },
+    {
+      "nome": "Canal 2 para Mensagens (Pregações e Estudos)",
+      "channel_id_ou_url": "https://www.youtube.com/@MylesMunroeemPortugu%C3%AAs-y5t",
+      "categoria_padrao_id": 8
+    },
+    {
+      "nome": "Canal 3 para Mensagens (Reflexões Cristãs)",
+      "channel_id_ou_url": "https://www.youtube.com/@MinutocomDeus",
+      "categoria_padrao_id": 8
+    }
+  ],
+  "pesquisa_autonoma_crista": [
+    {
+      "tema_geral": "Descobertas Arqueológicas Bíblicas e Curiosidades Históricas da Bíblia",
+      "categoria_id": 7,
+      "palavra_chave_imagem": "bible archaeology jerusalem ancient"
+    },
+    {
+      "tema_geral": "Estudo Bíblico Profundo e Reflexão Evangélica sobre Vida Cristã e Promessas de Deus",
+      "categoria_id": 24,
+      "palavra_chave_imagem": "open bible prayer christian faith"
+    },
+    {
+      "tema_geral": "Impacto do Evangelho, Avivamento no Mundo Cristão Atual e Obras Missionárias",
+      "categoria_id": 4,
+      "palavra_chave_imagem": "church worship missionary cross"
+    }
+  ],
+  "fontes_rss_tendencias": [
+    {
+      "nome": "Google Trends - Brasil (Geral)",
+      "url": "https://trends.google.com/trending/rss?geo=BR",
+      "categoria_padrao_id": 3
+    },
+    {
+      "nome": "G1 - Brasil e Cotidiano",
+      "url": "https://g1.globo.com/rss/g1/brasil/",
+      "categoria_padrao_id": 3
+    },
+    {
+      "nome": "Notícias Mundo Cristão / Gospel (Guiame / Pleno)",
+      "url": "https://guiame.com.br/rss/",
+      "categoria_padrao_id": 4
+    },
+    {
+      "nome": "Curiosidades e Ciência (MegaCurioso / G1)",
+      "url": "https://g1.globo.com/rss/g1/ciencia-e-saude/",
+      "categoria_padrao_id": 7
+    }
+  ],
+  "mapeamento_categorias": {
+    "brasil": 3,
+    "mundo_cristao": 4,
+    "politica": 5,
+    "saude": 6,
+    "curiosidades": 7,
+    "mensagens": 8,
+    "noticias": 12,
+    "voce_sabia": 15,
+    "missoes": 16,
+    "receitas": 17,
+    "receitas_tipicas": 18,
+    "fitness_e_fe": 19,
+    "biblia": 24,
+    "news": 28,
+    "filmes_e_series": 38,
+    "tech": 39,
+    "familia": 40
+  },
+  "agendamento": {
+    "intervalo_horas": 6,
+    "executar_modo_youtube": true,
+    "executar_modo_tendencias": true
+  }
+}
