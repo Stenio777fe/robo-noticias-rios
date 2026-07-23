@@ -116,15 +116,18 @@ class BuscadorYouTube:
             
         try:
             print(f"🗣️ Extraindo fala/legenda do vídeo {video_id}...")
-            # Tenta PT depois EN, ou qualquer idioma disponível
+            api = YouTubeTranscriptApi()
             try:
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['pt', 'pt-BR', 'en', 'es'])
+                transcricao = api.fetch(video_id, languages=["pt", "pt-BR", "en", "es"])
             except Exception:
-                # Se não achar por idioma específico, pega a primeira disponível
-                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-                transcript_list = transcripts.find_transcript(['pt', 'pt-BR', 'en']).fetch()
-                
-            texto_completo = " ".join([item["text"] for item in transcript_list])
+                lista = api.list(video_id)
+                transcricao = lista.find_transcript(["pt", "pt-BR", "en", "es"]).fetch()
+            trechos = []
+            for item in transcricao:
+                texto = item.text if hasattr(item, "text") else item.get("text", "")
+                if texto:
+                    trechos.append(texto)
+            texto_completo = " ".join(trechos)
             print(f"✅ Transcrição obtida com sucesso ({len(texto_completo)} caracteres).")
             return texto_completo
         except Exception as e:

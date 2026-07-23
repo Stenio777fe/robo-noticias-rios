@@ -1,8 +1,10 @@
 import sys
-import json
 import os
 import re
 import requests
+import bleach
+from bleach.css_sanitizer import CSSSanitizer
+from configuracao import carregar_config, valor_configurado
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -12,8 +14,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 class GeradorArtigos:
     def __init__(self, config_path="config.json"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = json.load(f)
+        self.config = carregar_config(config_path)
         self.ia_config = self.config.get("inteligencia_artificial", {})
         self.provedor = self.ia_config.get("provedor", "gemini").lower()
         self.api_key_gemini = self.ia_config.get("api_key_gemini", "")
@@ -23,41 +24,29 @@ class GeradorArtigos:
 
     def _chamar_gemini(self, prompt):
         """
-        Chama a API do Google Gemini via REST (100% confiável sem conflito de bibliotecas).
+        Chama a API do Google Gemini via SDK oficial (suporta chaves AQ e AIzaSy) com fallback REST.
         """
-        if not self.api_key_gemini or "COLE_SUA_CHAVE" in self.api_key_gemini:
-            raise ValueError("Chave de API do Gemini não configurada em config.json.")
-            
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.modelo_gemini}:generateContent?key={self.api_key_gemini}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95
-            }
-        }
-        
-        resp = requests.post(url, headers=headers, json=payload, timeout=90)
-        if resp.status_code == 200:
-            dados = resp.json()
-            try:
-                return dados["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError) as e:
-                raise ValueError(f"Resposta inesperada do Gemini: {dados}")
-        else:
-            raise RuntimeError(f"Erro na API do Gemini ({resp.status_code}): {resp.text}")
+        if not valor_configurado(self.api_key_gemini):
+            raise ValueError("Chave de API do Gemini não configurada.")
+        from google import genai
+        from google.genai import types
+        cliente = genai.Client(api_key=self.api_key_gemini)
+        resposta = cliente.models.generate_content(
+            model=self.modelo_gemini,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.7, top_p=0.95),
+        )
+        if not resposta or not resposta.text:
+            raise RuntimeError("O Gemini retornou uma resposta vazia.")
+        return resposta.text
 
     def _chamar_openai(self, prompt):
         """
         Chama a API da OpenAI via REST.
         """
-        if not self.api_key_openai or "COLE_SUA_CHAVE" in self.api_key_openai:
+        if not valor_configurado(self.api_key_openai):
             raise ValueError("Chave de API da OpenAI não configurada em config.json.")
-            
+
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -71,7 +60,7 @@ class GeradorArtigos:
             ],
             "temperature": 0.7
         }
-        
+
         resp = requests.post(url, headers=headers, json=payload, timeout=90)
         if resp.status_code == 200:
             dados = resp.json()
@@ -93,9 +82,11 @@ class GeradorArtigos:
         Retorna: (titulo_otimizado, conteudo_html, tags_list)
         """
         origem = dados_item.get("origem")
-        
+
         if origem == "youtube":
             return self._gerar_artigo_youtube(dados_item)
+        elif origem == "manual":
+            return self._gerar_artigo_manual(dados_item)
         else:
             return self._gerar_artigo_tendencia(dados_item)
 
@@ -103,7 +94,7 @@ class GeradorArtigos:
         titulo_v = item.get("titulo", "")
         transcricao = item.get("transcricao", "")
         video_id = item.get("video_id", "")
-        
+
         prompt = f"""
 Você é o redator-chefe e jornalista sênior do portal de notícias cristão e conservador "noticias.riosministerio.com".
 O seu papel é transformar vídeos relevantes do YouTube em artigos jornalísticos profundos, magnéticos e super ricos em conteúdo para os nossos leitores.
@@ -135,7 +126,7 @@ TAGS_SEO: [tags separadas por vírgula]
         titulo_orig = item.get("titulo_original", "")
         resumo = item.get("resumo", "")
         fonte = item.get("fonte_nome", "")
-        
+
         prompt = f"""
 Você é o redator-chefe e jornalista sênior do portal "noticias.riosministerio.com".
 Sua missão é escrever uma matéria jornalística completa, original, aprofundada e magnética sobre o assunto que está em alta agora.
@@ -161,22 +152,50 @@ TAGS_SEO: [tags separadas por vírgula]
         resposta = self._gerar_texto_ia(prompt)
         return self._processar_saida_ia(resposta, titulo_orig)
 
+    def _gerar_artigo_manual(self, item):
+        titulo_orig = item.get("titulo_original", item.get("titulo", ""))
+        texto_usuario = item.get("texto_usuario", item.get("resumo", ""))
+
+        prompt = f"""
+Você é o redator-chefe e jornalista sênior do portal "noticias.riosministerio.com".
+O usuário enviou um tema/título e anotações/texto próprio para você organizar, expandir e transformar em um artigo completo, super elegante e profissional para o site!
+
+TEMA / TÍTULO FORNECIDO: {titulo_orig}
+TEXTO / ANOTAÇÕES / BASE DO USUÁRIO:
+{texto_usuario}
+
+DIRETRIZES DE REDAÇÃO:
+1. Crie um TÍTULO chamativo e atraente (você pode aprimorar o título do usuário ou mantê-lo se já for excelente).
+2. Escreva/organize um artigo completo (500 a 950 palavras), dividendo o texto lindamente em subtítulos `<h2>` e `<h3>`, parágrafos `<p>` e adicione um bloco de destaque importante ou citação com `<blockquote><p>...</p></blockquote>`.
+3. Mantenha 100% da essência, mensagem e ideias que o usuário enviou, mas adicione profundidade, clareza, fluidez jornalística/literária e alta elegância.
+4. Ao final, sugira 4 ou 5 tags de SEO separadas por vírgula no formato exato: TAGS_SEO: tag1, tag2, tag3, tag4.
+
+FORMATO DE SAÍDA ESPERADO:
+TITULO: [Seu título aqui]
+CONTEUDO:
+[Seu código HTML aqui contendo <h2>, <p>, <blockquote>]
+TAGS_SEO: [tags separadas por vírgula]
+"""
+        print(f"🤖 Gerando e organizando artigo manual com IA: {titulo_orig[:40]}...")
+        resposta = self._gerar_texto_ia(prompt)
+        return self._processar_saida_ia(resposta, titulo_orig)
+
     def _processar_saida_ia(self, resposta_texto, titulo_fallback):
         titulo = titulo_fallback
         conteudo = resposta_texto
         tags = []
-        
+
         # Extrai TÍTULO
         match_tit = re.search(r'TITULO:\s*(.+)', resposta_texto, re.IGNORECASE)
         if match_tit:
             titulo = match_tit.group(1).strip()
-            
+
         # Extrai TAGS_SEO
         match_tags = re.search(r'TAGS_SEO:\s*(.+)', resposta_texto, re.IGNORECASE)
         if match_tags:
             tags_raw = match_tags.group(1).strip()
             tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-            
+
         # Extrai CONTEUDO HTML
         if "CONTEUDO:" in resposta_texto:
             partes = resposta_texto.split("CONTEUDO:")
@@ -191,7 +210,7 @@ TAGS_SEO: [tags separadas por vírgula]
             conteudo = resposta_texto[pos:].strip()
             if "TAGS_SEO:" in conteudo:
                 conteudo = conteudo.split("TAGS_SEO:")[0].strip()
-                
+
         # Limpa eventuais marcações de markdown de código (```html ... ```)
         if conteudo.startswith("```html"):
             conteudo = conteudo[7:]
@@ -199,5 +218,16 @@ TAGS_SEO: [tags separadas por vírgula]
             conteudo = conteudo[3:]
         if conteudo.endswith("```"):
             conteudo = conteudo[:-3]
-            
-        return titulo.strip(), conteudo.strip(), tags
+
+        tags_permitidas = ["p", "h2", "h3", "blockquote", "strong", "em", "ul", "ol", "li", "a", "div", "iframe", "br"]
+        atributos = {
+            "a": ["href", "title", "target", "rel"],
+            "div": ["class", "style"],
+            "iframe": ["src", "style", "allow", "allowfullscreen", "title"],
+        }
+        css = CSSSanitizer(allowed_css_properties=["position", "padding-bottom", "height", "overflow", "max-width", "margin", "border-radius", "box-shadow", "top", "left", "width", "border"])
+        conteudo = bleach.clean(conteudo, tags=tags_permitidas, attributes=atributos, css_sanitizer=css, strip=True)
+        titulo = bleach.clean(titulo, tags=[], strip=True)
+        if len(titulo) < 5 or len(conteudo) < 200:
+            raise ValueError("A IA retornou título ou conteúdo incompleto.")
+        return titulo.strip(), conteudo.strip(), tags[:5]

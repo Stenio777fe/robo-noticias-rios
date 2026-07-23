@@ -44,7 +44,7 @@ class BuscadorTendencias:
                         continue
                         
                     # Verifica no WordPress se já foi postada notícia com esse título
-                    if self.publicador.verificar_post_existente(titulo[:35]):
+                    if (link and self.publicador.verificar_post_existente(link)) or self.publicador.verificar_post_existente(titulo[:35]):
                         print(f"⏭️ Notícia já postada no site: '{titulo[:40]}...' (Ignorando)")
                         continue
                         
@@ -57,6 +57,9 @@ class BuscadorTendencias:
                         "fonte_nome": nome_fonte
                     })
                     count += 1
+            except Exception as e:
+                print(f"⚠️ Erro ao ler feed {nome_fonte}: {e}")
+                
         return noticias_selecionadas
 
     def obter_pesquisas_cristas_autonomas(self, max_itens=3):

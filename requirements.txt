@@ -7,3 +7,6 @@ beautifulsoup4>=4.12.3
 schedule>=1.2.1
 python-dateutil>=2.8.2
 Pillow>=10.2.0
+bleach>=6.1.0
+pytest>=8.0.0
+tinycss2>=1.2.1

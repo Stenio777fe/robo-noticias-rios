@@ -1,180 +1,148 @@
-import requests
-import json
+import mimetypes
 import os
-import sys
-import base64
-
-if hasattr(sys.stdout, 'reconfigure'):
-    try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    except Exception:
-        pass
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from configuracao import carregar_config, valor_configurado
 
 class PublicadorWordPress:
     def __init__(self, config_path="config.json"):
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Arquivo de configuração '{config_path}' não encontrado.")
-            
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = json.load(f)
-            
+        self.config = carregar_config(config_path)
         self.wp_config = self.config.get("wordpress", {})
-        self.api_url = self.wp_config.get("url_api", "https://noticias.riosministerio.com/wp-json/wp/v2").rstrip("/")
-        self.usuario = self.wp_config.get("usuario", "")
+        self.api_url = self.wp_config.get("url_api", "").rstrip("/")
+        self.usuario = self.wp_config.get("usuario", "").strip()
         self.senha = self.wp_config.get("senha_aplicativo", "").strip()
-        
+        if not self.api_url.startswith(("http://", "https://")):
+            raise ValueError("URL da API WordPress inválida.")
+        self.session = requests.Session()
+        retry = Retry(total=3, connect=3, read=3, backoff_factor=1,
+                      status_forcelist=(429, 500, 502, 503, 504),
+                      allowed_methods=frozenset({"GET", "HEAD"}))
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+        self.session.mount("http://", HTTPAdapter(max_retries=retry))
+
+    def _auth(self):
+        if not valor_configurado(self.usuario) or not valor_configurado(self.senha):
+            return None
+        return self.usuario, self.senha
+
     def _obter_headers_auth(self):
-        if not self.usuario or not self.senha or self.senha == "xxxx xxxx xxxx xxxx":
-            print("⚠️ AVISO: Senha de Aplicativo ou Usuário do WordPress não configurados no config.json.")
+        """Mantido por compatibilidade com reparar_imagens.py."""
+        if not self._auth():
             return {}
-        credenciais = f"{self.usuario}:{self.senha}"
-        token = base64.b64encode(credenciais.encode()).decode("utf-8")
-        return {"Authorization": f"Basic {token}"}
+        from requests.auth import _basic_auth_str
+        return {"Authorization": _basic_auth_str(self.usuario, self.senha)}
+
+    @staticmethod
+    def _erro_resposta(resposta):
+        try:
+            dados = resposta.json()
+            return str(dados.get("message", dados))[:500]
+        except Exception:
+            return resposta.text[:500]
 
     def verificar_post_existente(self, termo_busca):
-        """
-        Verifica no WordPress via REST API se já existe algum post publicado ou em rascunho com o termo/URL/título.
-        """
-        headers = self._obter_headers_auth()
-        url = f"{self.api_url}/posts"
-        params = {
-            "search": termo_busca,
-            "status": "publish,draft,future",
-            "per_page": 5
-        }
+        termo = str(termo_busca or "").strip()
+        if not termo:
+            return False
         try:
-            resposta = requests.get(url, headers=headers, params=params, timeout=15)
-            if resposta.status_code == 200:
-                posts = resposta.json()
-                for p in posts:
-                    # Verifica se o termo está no título ou no conteúdo
-                    titulo = p.get("title", {}).get("rendered", "").lower()
-                    conteudo = p.get("content", {}).get("rendered", "").lower()
-                    termo_low = termo_busca.lower()
-                    if termo_low in titulo or termo_low in conteudo:
-                        return True
-            return False
-        except Exception as e:
-            print(f"⚠️ Erro ao verificar post existente: {e}")
-            return False
+            resposta = self.session.get(
+                f"{self.api_url}/posts",
+                auth=self._auth(),
+                params={"search": termo, "status": "publish,draft,future,pending,private", "per_page": 10},
+                timeout=(10, 20),
+            )
+            resposta.raise_for_status()
+            termo_low = termo.casefold()
+            for post in resposta.json():
+                titulo = post.get("title", {}).get("rendered", "").casefold()
+                conteudo = post.get("content", {}).get("rendered", "").casefold()
+                if termo_low in titulo or termo_low in conteudo:
+                    return True
+        except requests.RequestException as exc:
+            print(f"⚠️ Não foi possível verificar duplicidade: {exc}")
+        return False
 
-    def enviar_imagem(self, caminho_arquivo_local, titulo_imagem="Imagem Destaque"):
-        """
-        Envia uma imagem para a Biblioteca de Mídia do WordPress (`/wp-json/wp/v2/media`) e retorna o ID da imagem.
-        """
-        if not os.path.exists(caminho_arquivo_local):
-            print(f"❌ Arquivo de imagem não encontrado: {caminho_arquivo_local}")
+    def enviar_imagem(self, caminho_arquivo_local, titulo_imagem="Imagem de destaque"):
+        if not self._auth():
+            print("❌ Credenciais WordPress não configuradas.")
             return None
-            
-        headers = self._obter_headers_auth()
-        if not headers:
-            print("❌ Autenticação necessária para envio de imagem.")
+        if not os.path.isfile(caminho_arquivo_local):
+            print(f"❌ Imagem não encontrada: {caminho_arquivo_local}")
             return None
-            
-        nome_arquivo = os.path.basename(caminho_arquivo_local)
-        ext = os.path.splitext(nome_arquivo)[1].lower()
-        content_type = "image/png" if ext == ".png" else "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/webp"
-        
-        headers["Content-Disposition"] = f'attachment; filename="{nome_arquivo}"'
-        headers["Content-Type"] = content_type
-        
-        url = f"{self.api_url}/media"
+        nome = os.path.basename(caminho_arquivo_local)
+        tipo = mimetypes.guess_type(nome)[0] or "application/octet-stream"
+        if not tipo.startswith("image/"):
+            print(f"❌ Arquivo recusado porque não é imagem: {nome}")
+            return None
+        headers = {"Content-Disposition": f'attachment; filename="{nome}"', "Content-Type": tipo}
         try:
-            with open(caminho_arquivo_local, "rb") as img_file:
-                resposta = requests.post(url, headers=headers, data=img_file, timeout=60)
-                
-            if resposta.status_code in [200, 201]:
-                dados_media = resposta.json()
-                media_id = dados_media.get("id")
-                url_media = dados_media.get("source_url")
-                print(f"✅ Imagem enviada com sucesso! ID: {media_id} ({url_media})")
-                return media_id
-            else:
-                print(f"❌ Erro ao enviar imagem ao WordPress ({resposta.status_code}): {resposta.text}")
+            with open(caminho_arquivo_local, "rb") as imagem:
+                resposta = self.session.post(f"{self.api_url}/media", auth=self._auth(),
+                                             headers=headers, data=imagem, timeout=(10, 90))
+            if resposta.status_code not in (200, 201):
+                print(f"❌ Upload recusado ({resposta.status_code}): {self._erro_resposta(resposta)}")
                 return None
-        except Exception as e:
-            print(f"❌ Exceção ao enviar imagem: {e}")
+            media = resposta.json()
+            print(f"✅ Imagem enviada. ID: {media.get('id')}")
+            return media.get("id")
+        except requests.RequestException as exc:
+            print(f"❌ Falha de rede no upload: {exc}")
             return None
 
     def _converter_tags_para_ids(self, tags_list):
-        if not tags_list or not isinstance(tags_list, list):
+        if not tags_list or not self._auth():
             return []
-        headers = self._obter_headers_auth()
-        headers["Content-Type"] = "application/json"
-        tag_ids = []
-        url_tags = f"{self.api_url}/tags"
-        for t in tags_list[:5]: # limita a 5 tags para ser super rápido
-            if isinstance(t, int):
-                tag_ids.append(t)
+        ids = []
+        url = f"{self.api_url}/tags"
+        for tag in tags_list[:5]:
+            if isinstance(tag, int):
+                ids.append(tag)
                 continue
-            nome = str(t).strip()
+            nome = str(tag).strip()[:100]
             if not nome:
                 continue
             try:
-                # Busca tag existente
-                resp = requests.get(url_tags, headers=headers, params={"search": nome}, timeout=10)
-                if resp.status_code == 200:
-                    encontradas = resp.json()
-                    id_achado = None
-                    for en in encontradas:
-                        if en.get("name", "").lower() == nome.lower():
-                            id_achado = en.get("id")
-                            break
-                    if not id_achado and encontradas:
-                        id_achado = encontradas[0].get("id")
-                    if id_achado:
-                        tag_ids.append(id_achado)
+                resposta = self.session.get(url, auth=self._auth(), params={"search": nome, "per_page": 20}, timeout=(10, 20))
+                if resposta.ok:
+                    exata = next((t for t in resposta.json() if t.get("name", "").casefold() == nome.casefold()), None)
+                    if exata:
+                        ids.append(exata["id"])
                         continue
-                # Se não encontrou, cria a tag no WordPress
-                resp_c = requests.post(url_tags, headers=headers, json={"name": nome}, timeout=10)
-                if resp_c.status_code in [200, 201]:
-                    tag_ids.append(resp_c.json().get("id"))
-            except Exception as e:
-                print(f"⚠️ Erro ao converter tag '{nome}': {e}")
-        return tag_ids
+                criada = self.session.post(url, auth=self._auth(), json={"name": nome}, timeout=(10, 20))
+                if criada.status_code in (200, 201):
+                    ids.append(criada.json()["id"])
+                elif criada.status_code == 400:
+                    existente = criada.json().get("data", {}).get("term_id")
+                    if existente:
+                        ids.append(existente)
+            except (requests.RequestException, ValueError, KeyError) as exc:
+                print(f"⚠️ Tag '{nome}' não processada: {exc}")
+        return ids
 
     def publicar_post(self, titulo, conteudo_html, categoria_ids, media_id=None, status="draft", tags=None):
-        """
-        Cria e publica/salva o post no WordPress.
-        """
-        headers = self._obter_headers_auth()
-        headers["Content-Type"] = "application/json"
-        
-        if not headers.get("Authorization"):
-            print("❌ Impossível publicar sem credenciais válidas.")
+        if not self._auth():
+            print("❌ Credenciais WordPress não configuradas.")
             return None
-            
-        if not isinstance(categoria_ids, list):
-            categoria_ids = [categoria_ids] if categoria_ids else [1] # 1 = Uncategorized
-            
-        url = f"{self.api_url}/posts"
-        payload = {
-            "title": titulo,
-            "content": conteudo_html,
-            "status": status,
-            "categories": categoria_ids,
-            "author": self.wp_config.get("autor_id", 1)
-        }
-        
+        if status not in {"draft", "publish", "future", "pending", "private"}:
+            raise ValueError(f"Status inválido: {status}")
+        categorias = categoria_ids if isinstance(categoria_ids, list) else [categoria_ids or 1]
+        payload = {"title": titulo, "content": conteudo_html, "status": status,
+                   "categories": categorias, "author": self.wp_config.get("autor_id", 1)}
         if media_id:
             payload["featured_media"] = media_id
-        if tags:
-            tag_ids = self._converter_tags_para_ids(tags)
-            if tag_ids:
-                payload["tags"] = tag_ids
-            
+        tag_ids = self._converter_tags_para_ids(tags)
+        if tag_ids:
+            payload["tags"] = tag_ids
         try:
-            resposta = requests.post(url, headers=headers, json=payload, timeout=30)
-            if resposta.status_code in [200, 201]:
-                dados_post = resposta.json()
-                post_id = dados_post.get("id")
-                link_post = dados_post.get("link")
-                print(f"🚀 Post criado com sucesso! ID: {post_id} | Status: {status.upper()}")
-                print(f"🔗 Link do Post: {link_post}")
-                return dados_post
-            else:
-                print(f"❌ Erro ao criar post no WordPress ({resposta.status_code}): {resposta.text}")
+            resposta = self.session.post(f"{self.api_url}/posts", auth=self._auth(), json=payload, timeout=(10, 45))
+            if resposta.status_code not in (200, 201):
+                print(f"❌ Publicação recusada ({resposta.status_code}): {self._erro_resposta(resposta)}")
                 return None
-        except Exception as e:
-            print(f"❌ Exceção ao publicar post: {e}")
+            post = resposta.json()
+            print(f"✅ Post criado. ID: {post.get('id')} | Status: {status.upper()}")
+            print(f"🔗 {post.get('link', '')}")
+            return post
+        except requests.RequestException as exc:
+            print(f"❌ Falha de rede ao publicar: {exc}")
             return None

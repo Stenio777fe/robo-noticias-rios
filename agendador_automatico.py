@@ -3,7 +3,7 @@ import schedule
 import subprocess
 import sys
 import os
-import json
+from configuracao import carregar_config
 
 if hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -29,8 +29,7 @@ def main():
         return
 
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+    config = carregar_config(config_path)
         
     intervalo = config.get("agendamento", {}).get("intervalo_horas", 6)
     
