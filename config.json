@@ -4,7 +4,7 @@
     "url_api": "https://noticias.riosministerio.com/wp-json/wp/v2",
     "usuario": "",
     "senha_aplicativo": "",
-    "status_padrao": "publish",
+    "status_padrao": "draft",
     "autor_id": 1
   },
   "inteligencia_artificial": {

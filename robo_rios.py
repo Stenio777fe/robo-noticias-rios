@@ -1,6 +1,8 @@
 import argparse
 import sys
 import os
+import html
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -26,7 +28,9 @@ class RoboRios:
         self.sequencia_origens = regras.get("sequencia_origens", ["tendencias", "youtube"])
 
         self.teste_rascunho = teste_rascunho
-        self.status_publicacao = "draft" if teste_rascunho else self.config.get("wordpress", {}).get("status_padrao", "draft")
+        # Fluxos automáticos sempre criam rascunhos. A publicação ao vivo fica
+        # reservada ao fluxo manual, depois da conferência editorial no WordPress.
+        self.status_publicacao = "draft"
 
         self.buscador_yt = BuscadorYouTube(self.config_path)
         self.buscador_tend = BuscadorTendencias(self.config_path)
@@ -94,6 +98,8 @@ class RoboRios:
             # 1. Gera texto e título com IA
             titulo, conteudo_html, tags = self.gerador_art.gerar_artigo(item)
 
+            conteudo_html += self._bloco_transparencia(item)
+
             origem_id = item.get("video_id") or item.get("link_original") or item.get("link")
             if origem_id:
                 conteudo_html += f"\n<!-- rios-news-source:{origem_id} -->"
@@ -124,6 +130,35 @@ class RoboRios:
             print(f"❌ Erro ao processar item '{item.get('titulo', item.get('titulo_original', ''))}': {e}")
             return False
 
+    @staticmethod
+    def _bloco_transparencia(item):
+        """Acrescenta origem visível e transparência editorial a cada matéria automática."""
+        origem = item.get("origem")
+        if origem == "manual":
+            return (
+                '\n<section class="rios-noticia-transparencia" aria-label="Transparência editorial">'
+                '<h2>Sobre esta publicação</h2>'
+                '<p>Conteúdo autoral preparado para o Rios Notícias e revisado antes da publicação.</p>'
+                '</section>'
+            )
+
+        url = str(item.get("link_original") or item.get("link") or "").strip()
+        if not url and item.get("video_id"):
+            url = f"https://www.youtube.com/watch?v={item['video_id']}"
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Não foi possível identificar uma fonte pública válida.")
+
+        fonte = html.escape(str(item.get("fonte_nome") or "Conteúdo original consultado"))
+        url_segura = html.escape(url, quote=True)
+        return (
+            '\n<section class="rios-noticia-transparencia" aria-label="Fontes e transparência editorial">'
+            '<h2>Fonte e transparência</h2>'
+            f'<p>Fonte consultada: <a href="{url_segura}" target="_blank" rel="noopener noreferrer nofollow">{fonte}</a>.</p>'
+            '<p>O texto foi organizado com apoio de tecnologia e passa por revisão editorial do Rios Notícias. '
+            'Informações podem ser atualizadas conforme novos dados se tornem públicos.</p>'
+            '</section>'
+        )
     def executar_fluxo_manual(self, tema, texto="", caminho_img=None, categoria_id=8):
         print("\n============================================================")
         print("✍️ INICIANDO FLUXO MANUAL DE REDAÇÃO E PUBLICAÇÃO")

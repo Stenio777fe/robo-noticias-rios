@@ -3,6 +3,7 @@ import os
 import re
 import requests
 import bleach
+from urllib.parse import urlparse
 from bleach.css_sanitizer import CSSSanitizer
 from configuracao import carregar_config, valor_configurado
 
@@ -82,6 +83,7 @@ class GeradorArtigos:
         Retorna: (titulo_otimizado, conteudo_html, tags_list)
         """
         origem = dados_item.get("origem")
+        self._validar_base_editorial(dados_item)
 
         if origem == "youtube":
             return self._gerar_artigo_youtube(dados_item)
@@ -89,6 +91,32 @@ class GeradorArtigos:
             return self._gerar_artigo_manual(dados_item)
         else:
             return self._gerar_artigo_tendencia(dados_item)
+
+    @staticmethod
+    def _texto_limpo(valor):
+        return bleach.clean(str(valor or ""), tags=[], strip=True).strip()
+
+    def _validar_base_editorial(self, item):
+        """Impede que a IA publique matérias baseadas apenas em um título."""
+        origem = item.get("origem")
+        if origem == "youtube":
+            transcricao = self._texto_limpo(item.get("transcricao"))
+            if len(transcricao) < 500:
+                raise ValueError("Vídeo sem transcrição/resumo suficiente para apuração editorial.")
+            if not item.get("link") and not item.get("video_id"):
+                raise ValueError("Vídeo sem endereço de origem verificável.")
+        elif origem == "manual":
+            texto = self._texto_limpo(item.get("texto_usuario") or item.get("resumo"))
+            if len(texto) < 250:
+                raise ValueError("Artigo manual precisa de pelo menos 250 caracteres de material próprio.")
+        else:
+            resumo = self._texto_limpo(item.get("resumo"))
+            link = str(item.get("link_original") or "").strip()
+            parsed = urlparse(link)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("Notícia sem link de fonte verificável.")
+            if len(resumo) < 220:
+                raise ValueError("Fonte com resumo insuficiente; matéria não será gerada somente pelo título.")
 
     def _gerar_artigo_youtube(self, item):
         titulo_v = item.get("titulo", "")
@@ -111,6 +139,8 @@ DIRETRIZES DE REDAÇÃO:
 5. IMPORTANTE: Logo após o segundo parágrafo ou o primeiro subtítulo `<h2>`, insira exatamente este código do player do vídeo do YouTube para que o leitor possa assistir diretamente no site:
 <div class="video-container" style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;max-width:100%;margin:25px 0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.15);"><iframe src="https://www.youtube.com/embed/{video_id}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" allowfullscreen></iframe></div>
 6. Ao final, sugira 4 ou 5 tags de SEO separadas por vírgula no final da sua resposta, na última linha, no formato exato: TAGS_SEO: tag1, tag2, tag3, tag4.
+7. Use somente fatos presentes na transcrição fornecida. Não invente declarações, datas, números, pessoas ou contexto.
+8. Diferencie claramente o que foi dito no vídeo da análise editorial do Rios Notícias.
 
 FORMATO DE SAÍDA ESPERADO:
 TITULO: [Seu título aqui]
@@ -141,6 +171,8 @@ DIRETRIZES DE REDAÇÃO:
 2. Escreva uma matéria de 600 a 900 palavras, estruturada de forma impecável com subtítulos `<h2>` e `<h3>`, parágrafos bem divididos (`<p>`) e ao menos um bloco de destaque com `<blockquote><p>...</p></blockquote>`.
 3. Mantenha um tom sério, confiável, analítico e, sempre que o tema permitir ou couber, traga uma reflexão edificante, ética ou alinhada à cosmovisão cristã e à família.
 4. Ao final, sugira 4 ou 5 tags de SEO separadas por vírgula no formato exato: TAGS_SEO: tag1, tag2, tag3, tag4.
+5. Use somente informações sustentadas pelo resumo e pela fonte fornecidos. Não invente falas, números, datas ou contexto.
+6. Reescreva com apuração e contexto próprios, sem copiar frases da fonte. Quando faltarem dados, reconheça a limitação em vez de completar por suposição.
 
 FORMATO DE SAÍDA ESPERADO:
 TITULO: [Seu título aqui]

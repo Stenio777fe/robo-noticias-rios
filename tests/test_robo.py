@@ -6,6 +6,7 @@ from configuracao import carregar_config
 from gerador_artigos import GeradorArtigos
 from gerador_imagens import GeradorImagens
 from publicador_wp import PublicadorWordPress
+from robo_rios import RoboRios
 
 
 def config_minima(tmp_path: Path):
@@ -56,3 +57,24 @@ def test_publicacao_sem_credencial_nao_faz_requisicao(tmp_path):
     publicador.session.post = Mock()
     assert publicador.publicar_post("Título", "<p>Conteúdo</p>", [1]) is None
     publicador.session.post.assert_not_called()
+
+
+def test_rejeita_tendencia_baseada_apenas_em_titulo():
+    gerador = GeradorArtigos.__new__(GeradorArtigos)
+    item = {"origem": "tendencia", "titulo_original": "Título", "resumo": "curto", "link_original": "https://example.com/noticia"}
+    try:
+        gerador._validar_base_editorial(item)
+        assert False, "deveria rejeitar base editorial insuficiente"
+    except ValueError:
+        pass
+
+
+def test_bloco_transparencia_exibe_fonte_segura():
+    bloco = RoboRios._bloco_transparencia({
+        "origem": "tendencia",
+        "fonte_nome": "Fonte & Jornal",
+        "link_original": "https://example.com/noticia?a=1&b=2",
+    })
+    assert "Fonte &amp; Jornal" in bloco
+    assert "https://example.com/noticia?a=1&amp;b=2" in bloco
+    assert "noopener noreferrer nofollow" in bloco

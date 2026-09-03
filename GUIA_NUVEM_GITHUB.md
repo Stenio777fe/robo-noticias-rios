@@ -18,10 +18,10 @@ No GitHub, abra **Settings → Secrets and variables → Actions** e crie estes 
 
 Em **Variables**, podem ser criadas:
 
-- `WORDPRESS_STATUS`: use `draft` para revisão ou `publish` para publicação automática;
+- `WORDPRESS_STATUS`: mantenha `draft` para revisão editorial;
 - `IA_PROVEDOR`: `gemini` ou `openai`.
 
-Comece com `WORDPRESS_STATUS=draft`.
+Use `WORDPRESS_STATUS=draft`. Os fluxos automáticos foram protegidos para criar rascunhos mesmo que uma configuração antiga ainda indique publicação direta.
 
 ## 3. Executar
 

@@ -47,7 +47,7 @@ jobs:
           WORDPRESS_API_URL: ${{ secrets.WORDPRESS_API_URL }}
           WORDPRESS_USUARIO: ${{ secrets.WORDPRESS_USUARIO }}
           WORDPRESS_APP_PASSWORD: ${{ secrets.WORDPRESS_APP_PASSWORD }}
-          WORDPRESS_STATUS: ${{ vars.WORDPRESS_STATUS || 'publish' }}
+          WORDPRESS_STATUS: ${{ vars.WORDPRESS_STATUS || 'draft' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           IA_PROVEDOR: ${{ vars.IA_PROVEDOR || 'gemini' }}
